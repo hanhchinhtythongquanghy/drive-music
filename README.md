@@ -36,7 +36,13 @@ Lưu ý: ai có link thư mục đều nghe được nhạc, đừng để file 
 Thử nhanh trên máy tính: mở terminal trong thư mục này, gõ `python3 -m http.server 8000`, vào http://localhost:8000.
 
 ### Bước 4 – Kết nối
-Mở web → ⚙ **Cài đặt** → dán **API key** và **link thư mục** → **Lưu & quét thư mục**.
+**Cách nhanh nhất (khuyên dùng):** mở file `config.js` bằng Notepad, dán **API key** và **link thư mục** vào,
+lưu lại rồi mới upload lên host. Mọi thiết bị mở web sẽ tự chạy, không phải nhập lại,
+và app tự quét lại thư mục nếu danh sách cũ hơn 6 giờ.
+Lưu ý: giá trị điền trong `config.js` được ưu tiên hơn giá trị nhập trong ⚙ Cài đặt.
+Sửa `config.js` sau này thì upload lại file đó lên host.
+
+**Hoặc nhập tay:** mở web → ⚙ **Cài đặt** → dán **API key** và **link thư mục** → **Lưu & quét thư mục**.
 Danh sách bài lưu trên máy nên lần sau mở là có nhạc ngay. Thêm nhạc mới vào Drive thì bấm ⟳.
 (Ô Client ID để trống.)
 

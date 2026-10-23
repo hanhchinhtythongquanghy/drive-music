@@ -146,6 +146,7 @@ details ol{padding-left:18px;margin:6px 0}
 
 <div id="toast"></div>
 <audio id="audio" preload="auto"></audio>
+<script src="config.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 (() => {
@@ -159,7 +160,13 @@ const LS = {
 const SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 const AUDIO_EXT = /\.(mp3|m4a|aac|flac|wav|ogg|oga|opus|weba)$/i;
 
-let cfg = LS.get('dm_cfg', { clientId: '', folder: '' });
+const FILE_CFG = window.DM_CONFIG || {};
+const SAVED_CFG = LS.get('dm_cfg', {});
+let cfg = {
+  apiKey: String(FILE_CFG.apiKey || SAVED_CFG.apiKey || '').trim(),
+  clientId: String(FILE_CFG.clientId || SAVED_CFG.clientId || '').trim(),
+  folder: String(FILE_CFG.folder || SAVED_CFG.folder || '').trim()
+};
 let tracks = LS.get('dm_lib', []);
 let favs = new Set(LS.get('dm_favs', []));
 let state = Object.assign({ vol: 1, shuffle: false, repeat: 'off', last: null, pos: 0 }, LS.get('dm_state', {}));
@@ -293,7 +300,8 @@ async function scan() {
     found.sort((a, b) => (a.folder + '\u0000' + a.name).localeCompare(b.folder + '\u0000' + b.name, 'vi', { numeric: true }));
     tracks = found; rebuildIndex();
     LS.set('dm_lib', tracks);
-    favs = new Set([...favs].filter(id => idx.has(id)));
+    LS.set('dm_libTime', Date.now());
+    favs =new Set([...favs].filter(id => idx.has(id)));
     LS.set('dm_favs', [...favs]);
     setStatus('');
     toast('Đã quét xong: ' + tracks.length + ' bài');
@@ -563,6 +571,7 @@ applyShuffleRepeat();
 initContext();
 render();
 if ((!cfg.apiKey && !cfg.clientId) || !parseFolder(cfg.folder)) setTimeout(openSettings, 300);
+else if (cfg.apiKey && (!tracks.length || Date.now() - LS.get('dm_libTime', 0) > 6 * 3600 * 1000)) scan();
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
