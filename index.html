@@ -121,7 +121,9 @@ details ol{padding-left:18px;margin:6px 0}
 
 <dialog id="dlg">
   <h2>⚙ Cài đặt</h2>
-  <label for="inClient">Google OAuth Client ID</label>
+  <label for="inKey">Google API key (cách đơn giản: thư mục phải chia sẻ "Bất kỳ ai có đường liên kết")</label>
+  <input type="text" id="inKey" placeholder="AIza..." autocomplete="off">
+  <label for="inClient">Hoặc OAuth Client ID (cách riêng tư, cần đăng nhập Google; bỏ trống nếu dùng API key)</label>
   <input type="text" id="inClient" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off">
   <label for="inFolder">Link (hoặc ID) thư mục nhạc trên Google Drive</label>
   <input type="text" id="inFolder" placeholder="https://drive.google.com/drive/folders/..." autocomplete="off">
@@ -134,7 +136,7 @@ details ol{padding-left:18px;margin:6px 0}
   <details>
     <summary>Hướng dẫn nhanh</summary>
     <ol>
-      <li>Lấy Client ID theo file README (Google Cloud Console, miễn phí).</li>
+      <li>Lấy API key (hoặc Client ID) theo file README (Google Cloud Console, miễn phí).</li>
       <li>Mở thư mục nhạc trên Drive → copy link trên thanh địa chỉ → dán vào ô trên.</li>
       <li>Bấm "Lưu &amp; quét", đăng nhập Google khi có cửa sổ hiện ra.</li>
       <li>Phím tắt (máy tính): Space = phát/dừng, ←/→ = tua 5s, N/P = bài sau/trước, S = trộn, R = lặp.</li>
@@ -240,9 +242,14 @@ async function driveList(q, pageToken) {
   });
   if (pageToken) p.set('pageToken', pageToken);
   const url = 'https://www.googleapis.com/drive/v3/files?' + p;
-  let token = await getToken();
-  let r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-  if (r.status === 401) { tok = null; token = await getToken(); r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } }); }
+  let r;
+  if (cfg.apiKey) {
+    r = await fetch(url + '&key=' + encodeURIComponent(cfg.apiKey));
+  } else {
+    let token = await getToken();
+    r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+    if (r.status === 401) { tok = null; token = await getToken(); r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } }); }
+  }
   if (!r.ok) {
     let msg = 'Drive API lỗi ' + r.status;
     try { const j = await r.json(); if (j.error && j.error.message) msg += ': ' + j.error.message; } catch (e) {}
@@ -377,7 +384,8 @@ function updateNowPlaying(t) {
   }
 }
 function streamUrl(id, token) {
-  return 'https://www.googleapis.com/drive/v3/files/' + id + '?alt=media&supportsAllDrives=true&access_token=' + encodeURIComponent(token);
+  const auth = cfg.apiKey ? '&key=' + encodeURIComponent(cfg.apiKey) : '&access_token=' + encodeURIComponent(token);
+  return 'https://www.googleapis.com/drive/v3/files/' + id + '?alt=media&supportsAllDrives=true' + auth;
 }
 async function load(id, startAt = 0, autoplay = true) {
   const t = idx.get(id); if (!t) return;
@@ -385,7 +393,7 @@ async function load(id, startAt = 0, autoplay = true) {
   state.last = id; state.pos = 0; LS.set('dm_state', state);
   updateNowPlaying(t); markPlaying();
   let token;
-  try { token = await getToken(); } catch (e) { toast(e.message); return; }
+  try { token = cfg.apiKey ? '' : await getToken(); } catch (e) { toast(e.message); return; }
   audio.src = streamUrl(id, token);
   if (autoplay) audio.play().catch(() => {});
 }
@@ -423,9 +431,11 @@ audio.addEventListener('pause', () => { $('#bPlay').textContent = '▶'; if ('me
 audio.addEventListener('ended', () => {
   if (state.repeat === 'one') { audio.currentTime = 0; audio.play().catch(() => {}); } else next(true);
 });
+let errRun = 0;
+audio.addEventListener('playing', () => { errRun = 0; });
 audio.addEventListener('error', async () => {
   if (!curId || !audio.getAttribute('src')) return;
-  if (!retried) {
+  if (!retried && !cfg.apiKey) {
     retried = true;
     const at = audio.currentTime || 0;
     tok = null; LS.del('dm_tok');
@@ -434,6 +444,11 @@ audio.addEventListener('error', async () => {
       pendingSeek = at; audio.src = streamUrl(curId, token); audio.play().catch(() => {});
       return;
     } catch (e) { toast('Phiên đăng nhập hết hạn. Bấm Phát để đăng nhập lại.'); state.pos = at; LS.set('dm_state', state); audio.removeAttribute('src'); return; }
+  }
+  errRun++;
+  if (errRun >= 3) {
+    toast(cfg.apiKey ? 'Không phát được: kiểm tra API key và chế độ chia sẻ thư mục ("Bất kỳ ai có đường liên kết")' : 'Không phát được nhiều bài liên tiếp, đã dừng');
+    return;
   }
   toast('Không phát được bài này, chuyển bài tiếp theo...');
   setTimeout(() => next(true), 1200);
@@ -523,14 +538,14 @@ if ('mediaSession' in navigator) {
 
 /* ---------- cài đặt ---------- */
 const dlg = $('#dlg');
-function openSettings() { $('#inClient').value = cfg.clientId; $('#inFolder').value = cfg.folder; if (!dlg.open) dlg.showModal(); }
+function openSettings() { $('#inKey').value = cfg.apiKey || ''; $('#inClient').value = cfg.clientId || ''; $('#inFolder').value = cfg.folder; if (!dlg.open) dlg.showModal(); }
 $('#btnSettings').onclick = openSettings;
 $('#btnClose').onclick = () => dlg.close();
 $('#btnSave').onclick = () => {
-  const c = $('#inClient').value.trim(), f = $('#inFolder').value.trim();
-  if (!c || !parseFolder(f)) { toast('Cần Client ID và link thư mục hợp lệ'); return; }
+  const k = $('#inKey').value.trim(), c = $('#inClient').value.trim(), f = $('#inFolder').value.trim();
+  if ((!k && !c) || !parseFolder(f)) { toast('Cần API key (hoặc Client ID) và link thư mục hợp lệ'); return; }
   if (c !== cfg.clientId) { tok = null; LS.del('dm_tok'); }
-  cfg = { clientId: c, folder: f }; LS.set('dm_cfg', cfg);
+  cfg = { clientId: c, folder: f, apiKey: k }; LS.set('dm_cfg', cfg);
   dlg.close(); scan();
 };
 $('#btnLogout').onclick = () => {
@@ -547,7 +562,7 @@ audio.volume = state.vol; $('#vol').value = state.vol;
 applyShuffleRepeat();
 initContext();
 render();
-if (!cfg.clientId || !parseFolder(cfg.folder)) setTimeout(openSettings, 300);
+if ((!cfg.apiKey && !cfg.clientId) || !parseFolder(cfg.folder)) setTimeout(openSettings, 300);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
